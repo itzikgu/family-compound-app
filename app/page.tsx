@@ -5,6 +5,7 @@ import { logout } from '@/app/login/actions'
 import { redirect } from 'next/navigation'
 import TopBar from '@/components/top-bar'
 import PushEnableButton from '@/components/push-enable-button'
+import PwaInstallButton from '@/components/pwa-install-button'
 
 type Household = {
   id: string
@@ -153,6 +154,9 @@ export default async function HomePage() {
             </span>
           </a>
         </section>
+
+        {/* PWA install prompt — only appears when Chrome fires beforeinstallprompt */}
+        <PwaInstallButton />
 
         {/* Push notification opt-in — client component, renders nothing until ready */}
         <PushEnableButton />
