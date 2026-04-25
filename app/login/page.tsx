@@ -1,9 +1,10 @@
+import { createClient } from '@/lib/supabase/server'
 import { login } from './actions'
 
 function getErrorMessage(errorCode?: string) {
   switch (errorCode) {
     case 'login-failed':
-      return 'האימייל או הסיסמה אינם תקינים.'
+      return 'הכניסה נכשלה. נסו שוב.'
     default:
       return null
   }
@@ -17,6 +18,16 @@ export default async function LoginPage({
   const resolvedSearchParams = (await searchParams) ?? {}
   const errorMessage = getErrorMessage(resolvedSearchParams.error)
 
+  // Fetch family members for the name picker.
+  // Requires an anon SELECT policy on family_members — see README.
+  const supabase = await createClient()
+  const { data: members } = await supabase
+    .from('family_members')
+    .select('id, full_name, email')
+    .order('full_name', { ascending: true })
+
+  const safeMembers = members ?? []
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-[#f8f5ed] to-[#f2eee4] px-4 py-8">
       <div className="w-full max-w-md">
@@ -25,7 +36,7 @@ export default async function LoginPage({
             <div className="mb-3 text-4xl">🌿</div>
             <h1 className="text-3xl font-bold text-[#2f3a2c]">כניסה למערכת</h1>
             <p className="mt-2 text-sm text-[#6c7664]">
-              התחברו כדי לנהל את המשק המשפחתי
+              בחרו את שמכם כדי להיכנס
             </p>
           </div>
 
@@ -35,40 +46,56 @@ export default async function LoginPage({
             </p>
           )}
 
-          <form action={login} className="space-y-4">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-[#384332]">
-                אימייל
-              </label>
-              <input
-                name="email"
-                type="email"
-                required
-                className="w-full rounded-2xl border border-[#d8d1c2] bg-white px-4 py-3 text-sm outline-none focus:border-[#6f7f57]"
-                placeholder="you@example.com"
-              />
+          {safeMembers.length === 0 ? (
+            /* Fallback: manual email + password if members can't be fetched */
+            <form action={login} className="space-y-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[#384332]">
+                  אימייל
+                </label>
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  className="w-full rounded-2xl border border-[#d8d1c2] bg-white px-4 py-3 text-sm outline-none focus:border-[#6f7f57]"
+                  placeholder="you@example.com"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[#384332]">
+                  סיסמה
+                </label>
+                <input
+                  name="password"
+                  type="password"
+                  required
+                  className="w-full rounded-2xl border border-[#d8d1c2] bg-white px-4 py-3 text-sm outline-none focus:border-[#6f7f57]"
+                  placeholder="••••••••"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full rounded-2xl bg-[#2f3a2c] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#232b20]"
+              >
+                כניסה
+              </button>
+            </form>
+          ) : (
+            /* Name picker — one tap per family member */
+            <div className="grid grid-cols-2 gap-3">
+              {safeMembers.map((member) => (
+                <form key={member.id} action={login}>
+                  <input type="hidden" name="email" value={member.email} />
+                  <button
+                    type="submit"
+                    className="w-full rounded-2xl border border-[#d8d1c2] bg-white px-4 py-4 text-center text-sm font-semibold text-[#2f3a2c] transition hover:border-[#6f7f57] hover:bg-[#f4f8ee] active:scale-95"
+                  >
+                    {member.full_name}
+                  </button>
+                </form>
+              ))}
             </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-[#384332]">
-                סיסמה
-              </label>
-              <input
-                name="password"
-                type="password"
-                required
-                className="w-full rounded-2xl border border-[#d8d1c2] bg-white px-4 py-3 text-sm outline-none focus:border-[#6f7f57]"
-                placeholder="••••••••"
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="w-full rounded-2xl bg-[#2f3a2c] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#232b20]"
-            >
-              כניסה
-            </button>
-          </form>
+          )}
         </div>
       </div>
     </main>
