@@ -13,6 +13,15 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim())
 })
 
+// ─── Fetch (required for PWA installability) ─────────────────────────────────
+// Chrome will not show the "Install app" prompt unless the service worker
+// intercepts fetch events. This handler is a simple network pass-through —
+// it adds no caching, just satisfies the installability requirement.
+
+self.addEventListener('fetch', (event) => {
+  event.respondWith(fetch(event.request))
+})
+
 // ─── Push ─────────────────────────────────────────────────────────────────────
 
 self.addEventListener('push', (event) => {
