@@ -43,13 +43,35 @@ export default function PushEnableButton() {
 
     const perm = Notification.permission
     if (perm === 'granted') {
-      // Already granted — check if we have an active subscription
-      navigator.serviceWorker.ready.then((reg) =>
-        reg.pushManager.getSubscription()
-      ).then((sub) => {
-        // If subscription exists, stay silent. If not (e.g. cleared), re-prompt.
-        setState(sub ? 'granted' : 'prompt')
-      }).catch(() => setState('prompt'))
+      // Permission already granted — get the browser's active subscription
+      // and sync it to the server every time. This is an idempotent upsert,
+      // so it's safe to call on every load. It fixes the case where the user
+      // approved push before the DB table existed, or the server call failed.
+      navigator.serviceWorker.ready
+        .then((reg) => reg.pushManager.getSubscription())
+        .then(async (sub) => {
+          if (!sub) {
+            // Browser has no subscription despite permission — show the button
+            setState('prompt')
+            return
+          }
+          // Re-save to DB (upsert) to repair any missing row
+          try {
+            await fetch('/api/push/subscribe', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                endpoint: sub.endpoint,
+                p256dh: bufToBase64(sub.getKey('p256dh')!),
+                auth: bufToBase64(sub.getKey('auth')!),
+              }),
+            })
+          } catch {
+            // Network error — not fatal, button stays hidden
+          }
+          setState('granted')
+        })
+        .catch(() => setState('prompt'))
       return
     }
 
