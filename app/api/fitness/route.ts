@@ -24,11 +24,12 @@ export async function POST(request: Request) {
     return NextResponse.redirect(new URL('/fitness?error=not-authenticated', request.url))
   }
 
-  // Fetch all other family members
+  // Fetch all other adult family members only
   const { data: others } = await supabase
     .from('family_members')
     .select('id')
     .neq('id', sender.id)
+    .eq('is_adult', true)
 
   const recipientIds = (others ?? []).map((m) => m.id)
 
