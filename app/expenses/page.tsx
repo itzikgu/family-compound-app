@@ -103,14 +103,6 @@ function formatAmount(amount: number) {
   return `₪${amount.toFixed(2).replace(/\.00$/, '')}`
 }
 
-/** Join a list of Hebrew names with commas and "ו" before the last. */
-function joinNames(names: string[]): string {
-  if (names.length === 0) return ''
-  if (names.length === 1) return names[0]
-  if (names.length === 2) return `${names[0]} ו${names[1]}`
-  return names.slice(0, -1).join(', ') + ' ו' + names[names.length - 1]
-}
-
 type GroupedDebt = {
   fromLabel: string
   toLabel: string
@@ -119,27 +111,45 @@ type GroupedDebt = {
   transactions: DebtTransaction[]
 }
 
+type GroupedSettlement = {
+  fromLabel: string
+  toLabel: string
+  amount: number
+  date: string
+}
+
+/** Return the household name for a member, falling back to their full name. */
+function householdLabel(
+  memberId: string,
+  members: FamilyMember[],
+  households: Household[]
+): string {
+  const member = members.find((m) => m.id === memberId)
+  if (!member) return 'לא ידוע'
+  if (member.household_id) {
+    const hh = households.find((h) => h.id === member.household_id)
+    if (hh) return hh.name
+  }
+  return member.full_name
+}
+
 /**
  * Collapse individual debt transactions into household-pair groups.
- * "A owes C ₪50" + "B owes C ₪50" → "A וB חייבים לC ₪100" (when A & B share a household).
- * Stores the raw transactions so the settle form can submit them individually.
+ * Labels use the household name (e.g. "אנקרי") rather than member names.
  */
 function groupDebtsByHousehold(
   transactions: DebtTransaction[],
-  members: FamilyMember[]
+  members: FamilyMember[],
+  households: Household[]
 ): GroupedDebt[] {
   const memberHousehold: Record<string, string | null> = {}
-  const memberName: Record<string, string> = {}
-  for (const m of members) {
-    memberHousehold[m.id] = m.household_id ?? null
-    memberName[m.id] = m.full_name
-  }
+  for (const m of members) memberHousehold[m.id] = m.household_id ?? null
 
   const groups: Record<string, {
-    fromIds: Set<string>
-    toIds: Set<string>
     amount: number
     transactions: DebtTransaction[]
+    fromMemberId: string
+    toMemberId: string
   }> = {}
 
   for (const t of transactions) {
@@ -148,18 +158,15 @@ function groupDebtsByHousehold(
     const key = `${fromKey}|${toKey}`
 
     if (!groups[key]) {
-      groups[key] = { fromIds: new Set(), toIds: new Set(), amount: 0, transactions: [] }
+      groups[key] = { amount: 0, transactions: [], fromMemberId: t.from, toMemberId: t.to }
     }
-    const g = groups[key]
-    g.fromIds.add(t.from)
-    g.toIds.add(t.to)
-    g.amount = Math.round((g.amount + t.amount) * 100) / 100
-    g.transactions.push(t)
+    groups[key].amount = Math.round((groups[key].amount + t.amount) * 100) / 100
+    groups[key].transactions.push(t)
   }
 
   return Object.values(groups).map((g) => ({
-    fromLabel: joinNames([...g.fromIds].map((id) => memberName[id] ?? id)),
-    toLabel: joinNames([...g.toIds].map((id) => memberName[id] ?? id)),
+    fromLabel: householdLabel(g.fromMemberId, members, households),
+    toLabel: householdLabel(g.toMemberId, members, households),
     amount: g.amount,
     transactions: g.transactions,
   }))
@@ -283,8 +290,23 @@ export default async function ExpensesPage({
   }
 
   const simplifiedDebts = computeSimplifiedDebts(expenses, settlements, members)
-  const groupedDebts = groupDebtsByHousehold(simplifiedDebts, members)
+  const groupedDebts = groupDebtsByHousehold(simplifiedDebts, members, households)
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0)
+
+  // Group settlement history by (date, from-household, to-household) — one line per family pair
+  const groupedSettlements: GroupedSettlement[] = (() => {
+    const map: Record<string, GroupedSettlement> = {}
+    for (const s of settlements) {
+      const fromLabel = householdLabel(s.from_member_id, members, households)
+      const toLabel = householdLabel(s.to_member_id, members, households)
+      const key = `${s.date}|${fromLabel}|${toLabel}`
+      if (!map[key]) {
+        map[key] = { fromLabel, toLabel, amount: 0, date: s.date }
+      }
+      map[key].amount = Math.round((map[key].amount + s.amount) * 100) / 100
+    }
+    return Object.values(map).sort((a, b) => b.date.localeCompare(a.date))
+  })()
 
   return (
     <main dir="rtl" className="min-h-screen bg-[#f6f3ea] p-4 md:p-6">
@@ -357,19 +379,19 @@ export default async function ExpensesPage({
             </ul>
           )}
 
-          {/* Settlement history */}
-          {settlements.length > 0 && (
+          {/* Settlement history — one line per family pair per date */}
+          {groupedSettlements.length > 0 && (
             <details className="mt-4">
               <summary className="cursor-pointer text-xs text-[#7a8471] hover:text-[#5f6b58]">
-                היסטוריית תשלומים ({settlements.length})
+                היסטוריית תשלומים ({groupedSettlements.length})
               </summary>
               <ul className="mt-3 space-y-2">
-                {settlements.map((s) => (
-                  <li key={s.id} className="flex items-center justify-between rounded-xl border border-[#e4dece] bg-[#f8fdf4] px-4 py-2 text-xs text-[#5f6b58]">
+                {groupedSettlements.map((s, i) => (
+                  <li key={i} className="flex items-center justify-between rounded-xl border border-[#e4dece] bg-[#f8fdf4] px-4 py-2 text-xs text-[#5f6b58]">
                     <span>
-                      <span className="font-medium">{getMemberName(s.from_member_id)}</span>
-                      {' שילם/ה ל'}
-                      <span className="font-medium">{getMemberName(s.to_member_id)}</span>
+                      <span className="font-medium">{s.fromLabel}</span>
+                      {' שילמו ל'}
+                      <span className="font-medium">{s.toLabel}</span>
                     </span>
                     <span className="flex items-center gap-3">
                       <span className="font-semibold text-[#4a6b3a]">{formatAmount(s.amount)}</span>
