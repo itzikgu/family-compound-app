@@ -23,7 +23,7 @@ export default function TopBar({
     <header className="rounded-3xl bg-[#2f3a2c] p-5 text-white shadow-[0_4px_20px_rgba(0,0,0,0.12)]">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl leading-tight md:text-3xl" style={{ fontFamily: '"Gveret Levin", cursive', fontWeight: 400 }}>{title}</h1>
+          <h1 className="text-2xl font-bold leading-tight md:text-3xl">{title}</h1>
           {subtitle && (
             <p className="mt-1 text-sm text-white/60 leading-relaxed">{subtitle}</p>
           )}
