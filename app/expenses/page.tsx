@@ -118,7 +118,12 @@ type GroupedSettlement = {
   date: string
 }
 
-/** Return the household name for a member, falling back to their full name. */
+/**
+ * Return a display label for a household.
+ * - Unique household name  → use the name (e.g. "אנקרי")
+ * - Duplicate name across households → join member first names with ו (e.g. "שושן וללי")
+ * - No household → member's full name
+ */
 function householdLabel(
   memberId: string,
   members: FamilyMember[],
@@ -126,11 +131,26 @@ function householdLabel(
 ): string {
   const member = members.find((m) => m.id === memberId)
   if (!member) return 'לא ידוע'
-  if (member.household_id) {
-    const hh = households.find((h) => h.id === member.household_id)
-    if (hh) return hh.name
+
+  if (!member.household_id) return member.full_name
+
+  const hh = households.find((h) => h.id === member.household_id)
+  if (!hh) return member.full_name
+
+  // Check if any other household shares the same name
+  const sameName = households.filter((h) => h.name === hh.name)
+  if (sameName.length === 1) {
+    // Unique name — use it
+    return hh.name
   }
-  return member.full_name
+
+  // Duplicate name — list first names of members in this specific household
+  const hhMembers = members.filter((m) => m.household_id === member.household_id)
+  const firstNames = hhMembers.map((m) => m.full_name.split(' ')[0])
+  if (firstNames.length === 0) return hh.name
+  if (firstNames.length === 1) return firstNames[0]
+  if (firstNames.length === 2) return `${firstNames[0]} ו${firstNames[1]}`
+  return firstNames.slice(0, -1).join(', ') + ' ו' + firstNames[firstNames.length - 1]
 }
 
 /**
