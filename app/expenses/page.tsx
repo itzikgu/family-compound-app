@@ -25,6 +25,14 @@ type Expense = {
   expense_splits: ExpenseSplit[]
 }
 
+type Settlement = {
+  id: string
+  from_member_id: string
+  to_member_id: string
+  amount: number
+  date: string
+}
+
 type FamilyMember = {
   id: string
   full_name: string
@@ -97,17 +105,25 @@ function formatAmount(amount: number) {
 
 function computeSimplifiedDebts(
   expenses: Expense[],
+  settlements: Settlement[],
   members: FamilyMember[]
 ): DebtTransaction[] {
   const balances: Record<string, number> = {}
   for (const m of members) balances[m.id] = 0
 
+  // Add expense splits
   for (const expense of expenses) {
     for (const split of expense.expense_splits ?? []) {
       if (split.member_id === expense.paid_by) continue
       balances[split.member_id] = (balances[split.member_id] ?? 0) - split.amount
       balances[expense.paid_by] = (balances[expense.paid_by] ?? 0) + split.amount
     }
+  }
+
+  // Subtract settlements (payments already made)
+  for (const s of settlements) {
+    balances[s.from_member_id] = (balances[s.from_member_id] ?? 0) + s.amount
+    balances[s.to_member_id] = (balances[s.to_member_id] ?? 0) - s.amount
   }
 
   const creditors = Object.entries(balances)
@@ -158,6 +174,7 @@ export default async function ExpensesPage({
 
   const [
     { data: expensesData, error: expensesError },
+    { data: settlementsData },
     { data: membersData },
     { data: householdsData },
   ] = await Promise.all([
@@ -167,6 +184,10 @@ export default async function ExpensesPage({
       .order('date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(50),
+    supabase
+      .from('settlements')
+      .select('id, from_member_id, to_member_id, amount, date')
+      .order('date', { ascending: false }),
     supabase
       .from('family_members')
       .select('id, full_name, household_id')
@@ -178,6 +199,7 @@ export default async function ExpensesPage({
   ])
 
   const expenses = (expensesData ?? []) as Expense[]
+  const settlements = (settlementsData ?? []) as Settlement[]
   const members = (membersData ?? []) as FamilyMember[]
   const households = (householdsData ?? []) as Household[]
 
@@ -198,7 +220,7 @@ export default async function ExpensesPage({
     return members.find((m) => m.id === id)?.full_name ?? 'לא ידוע'
   }
 
-  const simplifiedDebts = computeSimplifiedDebts(expenses, members)
+  const simplifiedDebts = computeSimplifiedDebts(expenses, settlements, members)
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0)
 
   return (
@@ -223,7 +245,7 @@ export default async function ExpensesPage({
             <div>
               <h2 className="text-xl font-semibold text-[#2f3a2c]">מי חייב למי</h2>
               <p className="mt-1 text-sm text-[#6c7664]">
-                סיכום מאוחד — מינימום העברות לסגירת כל החשבונות
+                סיכום מאוחד — לחצו על &quot;שולם&quot; כשהכסף עבר
               </p>
             </div>
             <div className="rounded-full bg-[#eef2e8] px-4 py-2 text-sm text-[#5c694f]">
@@ -240,7 +262,7 @@ export default async function ExpensesPage({
               {simplifiedDebts.map((t, i) => (
                 <li
                   key={i}
-                  className="flex items-center justify-between rounded-2xl border border-[#e4dece] bg-[#fcfaf4] px-5 py-4"
+                  className="flex flex-col gap-3 rounded-2xl border border-[#e4dece] bg-[#fcfaf4] px-5 py-4 md:flex-row md:items-center md:justify-between"
                 >
                   <div className="flex items-center gap-3 text-sm">
                     <span className="font-semibold text-[#384332]">
@@ -251,13 +273,50 @@ export default async function ExpensesPage({
                     <span className="font-semibold text-[#384332]">
                       {getMemberName(t.to)}
                     </span>
+                    <span className="rounded-full bg-[#a67c52]/10 px-4 py-1 text-sm font-bold text-[#a67c52]">
+                      {formatAmount(t.amount)}
+                    </span>
                   </div>
-                  <span className="rounded-full bg-[#a67c52]/10 px-4 py-1 text-sm font-bold text-[#a67c52]">
-                    {formatAmount(t.amount)}
-                  </span>
+
+                  {/* Mark as paid — records a settlement */}
+                  <form action="/api/expenses/settle" method="POST">
+                    <input type="hidden" name="from_member_id" value={t.from} />
+                    <input type="hidden" name="to_member_id" value={t.to} />
+                    <input type="hidden" name="amount" value={t.amount} />
+                    <button
+                      type="submit"
+                      className="rounded-xl border border-[#c8d8a8] bg-[#f4f8ee] px-4 py-2 text-xs font-semibold text-[#4a6b3a] transition hover:bg-[#e2ecd4]"
+                    >
+                      ✓ שולם
+                    </button>
+                  </form>
                 </li>
               ))}
             </ul>
+          )}
+
+          {/* Settlement history */}
+          {settlements.length > 0 && (
+            <details className="mt-4">
+              <summary className="cursor-pointer text-xs text-[#7a8471] hover:text-[#5f6b58]">
+                היסטוריית תשלומים ({settlements.length})
+              </summary>
+              <ul className="mt-3 space-y-2">
+                {settlements.map((s) => (
+                  <li key={s.id} className="flex items-center justify-between rounded-xl border border-[#e4dece] bg-[#f8fdf4] px-4 py-2 text-xs text-[#5f6b58]">
+                    <span>
+                      <span className="font-medium">{getMemberName(s.from_member_id)}</span>
+                      {' שילם/ה ל'}
+                      <span className="font-medium">{getMemberName(s.to_member_id)}</span>
+                    </span>
+                    <span className="flex items-center gap-3">
+                      <span className="font-semibold text-[#4a6b3a]">{formatAmount(s.amount)}</span>
+                      <span className="text-[#a0a89a]">{formatDate(s.date)}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
         </section>
 
@@ -442,7 +501,7 @@ export default async function ExpensesPage({
 
               {householdsWithMembers.length === 0 ? (
                 <div className="rounded-2xl border border-[#e4dece] bg-[#fcfaf4] p-4 text-sm text-[#7a8471]">
-                  לא נמצאו בתי אב עם חברים מקושרים. יש להריץ את ה-SQL לקישור חברים לבתי האב.
+                  לא נמצאו בתי אב עם חברים מקושרים.
                 </div>
               ) : (
                 <div className="grid gap-3 md:grid-cols-2">

@@ -3,21 +3,13 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
-const FAMILY_PASSWORD = '123456'
-
 export async function login(formData: FormData) {
   const email = String(formData.get('email') ?? '')
-
-  if (!email) {
-    redirect('/login?error=login-failed')
-  }
+  const password = String(formData.get('password') ?? '')
 
   const supabase = await createClient()
 
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password: FAMILY_PASSWORD,
-  })
+  const { error } = await supabase.auth.signInWithPassword({ email, password })
 
   if (error) {
     redirect('/login?error=login-failed')

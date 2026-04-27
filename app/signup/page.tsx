@@ -1,15 +1,19 @@
-import { login } from './actions'
+import { signup } from './actions'
 
 function getErrorMessage(errorCode?: string) {
   switch (errorCode) {
-    case 'login-failed':
-      return 'האימייל או הסיסמה אינם נכונים.'
+    case 'invalid-fields':
+      return 'יש למלא שם, אימייל וסיסמה של לפחות 6 תווים.'
+    case 'already-registered':
+      return 'כתובת האימייל הזו כבר רשומה. נסו להתחבר.'
+    case 'signup-failed':
+      return 'ההרשמה נכשלה. נסו שוב.'
     default:
       return null
   }
 }
 
-export default async function LoginPage({
+export default async function SignupPage({
   searchParams,
 }: {
   searchParams?: Promise<{ error?: string }>
@@ -23,9 +27,9 @@ export default async function LoginPage({
         <div className="rounded-[32px] border border-[#d8d1c2] bg-[#fffdf8] p-7 shadow-[0_4px_24px_rgba(0,0,0,0.07)]">
           <div className="mb-6 text-center">
             <div className="mb-3 text-4xl">🌿</div>
-            <h1 className="text-3xl font-bold text-[#2f3a2c]">כניסה למערכת</h1>
+            <h1 className="text-3xl font-bold text-[#2f3a2c]">הרשמה</h1>
             <p className="mt-2 text-sm text-[#6c7664]">
-              התחברו כדי לנהל את המשק המשפחתי
+              צרו חשבון חדש למשק המשפחתי
             </p>
           </div>
 
@@ -35,7 +39,21 @@ export default async function LoginPage({
             </p>
           )}
 
-          <form action={login} className="space-y-4">
+          <form action={signup} className="space-y-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[#384332]">
+                שם מלא
+              </label>
+              <input
+                name="full_name"
+                type="text"
+                required
+                autoComplete="name"
+                className="w-full rounded-2xl border border-[#d8d1c2] bg-white px-4 py-3 text-sm outline-none focus:border-[#6f7f57]"
+                placeholder="ישראל ישראלי"
+              />
+            </div>
+
             <div>
               <label className="mb-2 block text-sm font-medium text-[#384332]">
                 אימייל
@@ -58,9 +76,10 @@ export default async function LoginPage({
                 name="password"
                 type="password"
                 required
-                autoComplete="current-password"
+                minLength={6}
+                autoComplete="new-password"
                 className="w-full rounded-2xl border border-[#d8d1c2] bg-white px-4 py-3 text-sm outline-none focus:border-[#6f7f57]"
-                placeholder="••••••••"
+                placeholder="לפחות 6 תווים"
               />
             </div>
 
@@ -68,14 +87,14 @@ export default async function LoginPage({
               type="submit"
               className="w-full rounded-2xl bg-[#2f3a2c] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#232b20]"
             >
-              כניסה
+              הרשמה
             </button>
           </form>
 
           <p className="mt-5 text-center text-sm text-[#7a8471]">
-            חבר/ה חדש/ה?{' '}
-            <a href="/signup" className="font-semibold text-[#4a6b3a] hover:underline">
-              הרשמה
+            כבר רשומים?{' '}
+            <a href="/login" className="font-semibold text-[#4a6b3a] hover:underline">
+              כניסה
             </a>
           </p>
         </div>
