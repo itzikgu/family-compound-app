@@ -31,6 +31,10 @@ export default function RootLayout({
       <head>
         {/* Apple touch icon for iOS home screen */}
         <link rel="apple-touch-icon" href="/icon.svg" />
+        {/* Gveret Levin — used for the app title in TopBar */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link href="https://fonts.googleapis.com/css2?family=Gveret+Levin&display=swap" rel="stylesheet" />
       </head>
       <body>
         <PushProvider />
