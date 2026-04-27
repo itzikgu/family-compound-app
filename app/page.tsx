@@ -71,7 +71,7 @@ export default async function HomePage() {
       <div className="mx-auto max-w-4xl space-y-5">
         <TopBar
           title="המשק המשפחתי"
-          subtitle="רכבים · בריכה · משימות · הוצאות · בייביסיטר"
+          subtitle="רכבים · בריכה · משימות · הוצאות · כושר"
           currentUserName={currentUser.full_name}
           unreadCount={unreadCount}
         />
@@ -164,6 +164,19 @@ export default async function HomePage() {
             <span className="text-sm font-semibold text-[#2f3a2c]">בייביסיטר</span>
             <span className="rounded-full bg-[#f5edf5] px-2.5 py-0.5 text-xs text-[#7a4a7a]">
               מעקב זמן
+            </span>
+          </a>
+
+          <a
+            href="/fitness"
+            className="group flex flex-col items-center gap-2 rounded-2xl border border-[#d8d1c2] bg-[#fffdf8] p-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md"
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#edf3f5] text-2xl">
+              💪
+            </div>
+            <span className="text-sm font-semibold text-[#2f3a2c]">כושר</span>
+            <span className="rounded-full bg-[#edf3f5] px-2.5 py-0.5 text-xs text-[#3a6b7a]">
+              הזמן לאימון
             </span>
           </a>
         </section>
