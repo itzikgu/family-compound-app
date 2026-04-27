@@ -46,28 +46,45 @@ export default async function BabysitterPage() {
   const { unreadCount } = await getCurrentUserNotifications()
   const supabase = await createClient()
 
+  // Get all members in the same household so we can scope history correctly
+  const householdId = currentUser.household_id ?? null
+
   const [
     { data: membersData },
+    { data: householdMembersData },
     { data: activeData },
-    { data: historyData },
   ] = await Promise.all([
     supabase
       .from('family_members')
       .select('id, full_name')
       .order('full_name', { ascending: true }),
+    householdId
+      ? supabase
+          .from('family_members')
+          .select('id')
+          .eq('household_id', householdId)
+      : supabase
+          .from('family_members')
+          .select('id')
+          .eq('id', currentUser.id),
     supabase
       .from('babysitter_sessions')
       .select('id, babysitter_id, started_at, ended_at, duration_minutes, hourly_rate, created_by')
       .is('ended_at', null)
       .order('started_at', { ascending: false })
       .limit(1),
-    supabase
-      .from('babysitter_sessions')
-      .select('id, babysitter_id, started_at, ended_at, duration_minutes, hourly_rate, created_by')
-      .not('ended_at', 'is', null)
-      .order('started_at', { ascending: false })
-      .limit(20),
   ])
+
+  // IDs of everyone in this household — used to filter history
+  const householdMemberIds = (householdMembersData ?? []).map((m: { id: string }) => m.id)
+
+  const { data: historyData } = await supabase
+    .from('babysitter_sessions')
+    .select('id, babysitter_id, started_at, ended_at, duration_minutes, hourly_rate, created_by')
+    .not('ended_at', 'is', null)
+    .in('created_by', householdMemberIds)
+    .order('started_at', { ascending: false })
+    .limit(20)
 
   const members = (membersData ?? []) as Member[]
   const activeSession = ((activeData ?? []) as BabysitterSession[])[0] ?? null

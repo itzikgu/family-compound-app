@@ -14,7 +14,7 @@ export async function getAuthenticatedFamilyMember() {
 
   const { data: familyMember, error: memberError } = await supabase
     .from('family_members')
-    .select('id, full_name, email')
+    .select('id, full_name, email, household_id')
     .eq('email', user.email)
     .single()
 
