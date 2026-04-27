@@ -71,13 +71,13 @@ export default async function HomePage() {
       <div className="mx-auto max-w-4xl space-y-5">
         <TopBar
           title="המשק המשפחתי"
-          subtitle="רכבים · בריכה · משימות · הוצאות"
+          subtitle="רכבים · בריכה · משימות · הוצאות · בייביסיטר"
           currentUserName={currentUser.full_name}
           unreadCount={unreadCount}
         />
 
         {/* Quick-action strip */}
-        <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <section className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">
           <a
             href="/vehicles"
             className="group flex flex-col items-center gap-2 rounded-2xl border border-[#d8d1c2] bg-[#fffdf8] p-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md"
@@ -151,6 +151,19 @@ export default async function HomePage() {
             <span className="text-sm font-semibold text-[#2f3a2c]">הוצאות</span>
             <span className="rounded-full bg-[#f3eee3] px-2.5 py-0.5 text-xs text-[#a67c52]">
               {totalExpenses} רשומות
+            </span>
+          </a>
+
+          <a
+            href="/babysitter"
+            className="group flex flex-col items-center gap-2 rounded-2xl border border-[#d8d1c2] bg-[#fffdf8] p-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md"
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f5edf5] text-2xl">
+              👶
+            </div>
+            <span className="text-sm font-semibold text-[#2f3a2c]">בייביסיטר</span>
+            <span className="rounded-full bg-[#f5edf5] px-2.5 py-0.5 text-xs text-[#7a4a7a]">
+              מעקב זמן
             </span>
           </a>
         </section>
