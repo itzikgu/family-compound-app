@@ -24,14 +24,16 @@ export async function POST(request: Request) {
     return NextResponse.redirect(new URL('/fitness?error=not-authenticated', request.url))
   }
 
-  // Fetch all other adult family members only
+  const ADULT_FIRST_NAMES = ['שושן', 'ללי', 'מיטל', 'עוז', 'אורטל', 'אביעד', 'דניאל', 'איציק']
+
   const { data: others } = await supabase
     .from('family_members')
-    .select('id')
+    .select('id, full_name')
     .neq('id', sender.id)
-    .eq('is_adult', true)
 
-  const recipientIds = (others ?? []).map((m) => m.id)
+  const recipientIds = (others ?? [])
+    .filter((m) => ADULT_FIRST_NAMES.includes(m.full_name.split(' ')[0]))
+    .map((m) => m.id)
 
   if (recipientIds.length > 0) {
     const firstName = sender.full_name.split(' ')[0]
