@@ -103,6 +103,64 @@ function formatAmount(amount: number) {
   return `₪${amount.toFixed(2).replace(/\.00$/, '')}`
 }
 
+/** Join a list of Hebrew names with commas and "ו" before the last. */
+function joinNames(names: string[]): string {
+  if (names.length === 0) return ''
+  if (names.length === 1) return names[0]
+  if (names.length === 2) return `${names[0]} ו${names[1]}`
+  return names.slice(0, -1).join(', ') + ' ו' + names[names.length - 1]
+}
+
+type GroupedDebt = {
+  fromIds: string[]
+  toIds: string[]
+  fromLabel: string
+  toLabel: string
+  amount: number
+}
+
+/**
+ * Collapse individual debt transactions into household-pair groups.
+ * "A owes C ₪50" + "B owes C ₪50" → "A וB חייבים ל-C ₪100" (when A & B share a household).
+ */
+function groupDebtsByHousehold(
+  transactions: DebtTransaction[],
+  members: FamilyMember[]
+): GroupedDebt[] {
+  const memberHousehold: Record<string, string | null> = {}
+  const memberName: Record<string, string> = {}
+  for (const m of members) {
+    memberHousehold[m.id] = m.household_id ?? null
+    memberName[m.id] = m.full_name
+  }
+
+  // Group by (from-household-or-id, to-household-or-id)
+  const groups: Record<string, GroupedDebt> = {}
+
+  for (const t of transactions) {
+    const fromKey = memberHousehold[t.from] ?? t.from
+    const toKey = memberHousehold[t.to] ?? t.to
+    const key = `${fromKey}|${toKey}`
+
+    if (!groups[key]) {
+      groups[key] = { fromIds: [], toIds: [], fromLabel: '', toLabel: '', amount: 0 }
+    }
+
+    const g = groups[key]
+    if (!g.fromIds.includes(t.from)) g.fromIds.push(t.from)
+    if (!g.toIds.includes(t.to)) g.toIds.push(t.to)
+    g.amount = Math.round((g.amount + t.amount) * 100) / 100
+  }
+
+  // Build display labels
+  for (const g of Object.values(groups)) {
+    g.fromLabel = joinNames(g.fromIds.map((id) => memberName[id] ?? id))
+    g.toLabel = joinNames(g.toIds.map((id) => memberName[id] ?? id))
+  }
+
+  return Object.values(groups)
+}
+
 function computeSimplifiedDebts(
   expenses: Expense[],
   settlements: Settlement[],
@@ -221,6 +279,7 @@ export default async function ExpensesPage({
   }
 
   const simplifiedDebts = computeSimplifiedDebts(expenses, settlements, members)
+  const groupedDebts = groupDebtsByHousehold(simplifiedDebts, members)
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0)
 
   return (
@@ -253,43 +312,54 @@ export default async function ExpensesPage({
             </div>
           </div>
 
-          {simplifiedDebts.length === 0 ? (
+          {groupedDebts.length === 0 ? (
             <div className="rounded-2xl border border-[#c8d8a8] bg-[#f4f8ee] p-4 text-sm font-medium text-[#4a6b3a]">
               הכול מאוזן! אין חובות פתוחים כרגע. 🎉
             </div>
           ) : (
             <ul className="space-y-3">
-              {simplifiedDebts.map((t, i) => (
+              {groupedDebts.map((g, i) => (
                 <li
                   key={i}
-                  className="flex flex-col gap-3 rounded-2xl border border-[#e4dece] bg-[#fcfaf4] px-5 py-4 md:flex-row md:items-center md:justify-between"
+                  className="flex flex-col gap-3 rounded-2xl border border-[#e4dece] bg-[#fcfaf4] px-5 py-4"
                 >
-                  <div className="flex items-center gap-3 text-sm">
-                    <span className="font-semibold text-[#384332]">
-                      {getMemberName(t.from)}
-                    </span>
-                    <span className="text-[#a67c52]">←</span>
-                    <span className="text-[#6c7664]">חייב/ת ל</span>
-                    <span className="font-semibold text-[#384332]">
-                      {getMemberName(t.to)}
-                    </span>
-                    <span className="rounded-full bg-[#a67c52]/10 px-4 py-1 text-sm font-bold text-[#a67c52]">
-                      {formatAmount(t.amount)}
-                    </span>
-                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="font-semibold text-[#384332]">{g.fromLabel}</span>
+                      <span className="text-[#6c7664]">
+                        {g.fromIds.length > 1 ? 'חייבים ל' : 'חייב/ת ל'}
+                      </span>
+                      <span className="font-semibold text-[#384332]">{g.toLabel}</span>
+                      <span className="rounded-full bg-[#a67c52]/10 px-4 py-1 text-sm font-bold text-[#a67c52]">
+                        {formatAmount(g.amount)}
+                      </span>
+                    </div>
 
-                  {/* Mark as paid — records a settlement */}
-                  <form action="/api/expenses/settle" method="POST">
-                    <input type="hidden" name="from_member_id" value={t.from} />
-                    <input type="hidden" name="to_member_id" value={t.to} />
-                    <input type="hidden" name="amount" value={t.amount} />
-                    <button
-                      type="submit"
-                      className="rounded-xl border border-[#c8d8a8] bg-[#f4f8ee] px-4 py-2 text-xs font-semibold text-[#4a6b3a] transition hover:bg-[#e2ecd4]"
-                    >
-                      ✓ שולם
-                    </button>
-                  </form>
+                    {/* שולם — records one settlement per debtor→creditor pair */}
+                    <div className="flex flex-wrap gap-2">
+                      {g.fromIds.map((fromId) =>
+                        g.toIds.map((toId) => {
+                          const share = Math.round((g.amount / (g.fromIds.length * g.toIds.length)) * 100) / 100
+                          return (
+                            <form key={`${fromId}-${toId}`} action="/api/expenses/settle" method="POST">
+                              <input type="hidden" name="from_member_id" value={fromId} />
+                              <input type="hidden" name="to_member_id" value={toId} />
+                              <input type="hidden" name="amount" value={share} />
+                              <button
+                                type="submit"
+                                className="rounded-xl border border-[#c8d8a8] bg-[#f4f8ee] px-4 py-2 text-xs font-semibold text-[#4a6b3a] transition hover:bg-[#e2ecd4]"
+                              >
+                                ✓ שולם
+                                {g.fromIds.length > 1 || g.toIds.length > 1
+                                  ? ` (${getMemberName(fromId)} → ${getMemberName(toId)})`
+                                  : ''}
+                              </button>
+                            </form>
+                          )
+                        })
+                      )}
+                    </div>
+                  </div>
                 </li>
               ))}
             </ul>
