@@ -105,32 +105,46 @@ export async function POST(request: Request) {
   let splits: { expense_id: string; member_id: string; amount: number }[] = []
 
   if (splitType === 'per_family') {
+    // Look up the payer's household so we can exclude it from splits —
+    // the payer's household already covered their share by paying.
+    const { data: payerMember } = await supabase
+      .from('family_members')
+      .select('household_id')
+      .eq('id', paidBy)
+      .single()
+    const payerHouseholdId = payerMember?.household_id ?? null
+
     // Fetch all members belonging to the selected households
     const { data: householdMembers } = await supabase
       .from('family_members')
       .select('id, household_id')
       .in('household_id', familyParticipantIds)
 
-    // Group member IDs by household
+    // Group member IDs by household, skipping the payer's household
     const byHousehold: Record<string, string[]> = {}
     for (const m of householdMembers ?? []) {
       if (!m.household_id) continue
+      if (m.household_id === payerHouseholdId) continue  // payer's household owes nothing
       if (!byHousehold[m.household_id]) byHousehold[m.household_id] = []
       byHousehold[m.household_id].push(m.id)
     }
 
-    const numHouseholds = familyParticipantIds.length
+    // Only the non-payer households owe anything
+    const owingHouseholdIds = familyParticipantIds.filter(
+      (hid) => hid !== payerHouseholdId
+    )
+    const numHouseholds = familyParticipantIds.length  // total including payer's, for equal share calc
     const basePerHousehold =
       Math.floor((amountRaw / numHouseholds) * 100) / 100
 
-    for (let hi = 0; hi < familyParticipantIds.length; hi++) {
-      const householdId = familyParticipantIds[hi]
+    for (let hi = 0; hi < owingHouseholdIds.length; hi++) {
+      const householdId = owingHouseholdIds[hi]
       const memberIds = byHousehold[householdId] ?? []
       if (memberIds.length === 0) continue
 
-      // Last household absorbs any rounding remainder
+      // Last owing household absorbs any rounding remainder
       const householdShare =
-        hi === familyParticipantIds.length - 1
+        hi === owingHouseholdIds.length - 1
           ? Math.round(
               (amountRaw - basePerHousehold * (numHouseholds - 1)) * 100
             ) / 100
