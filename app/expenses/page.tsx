@@ -112,16 +112,17 @@ function joinNames(names: string[]): string {
 }
 
 type GroupedDebt = {
-  fromIds: string[]
-  toIds: string[]
   fromLabel: string
   toLabel: string
   amount: number
+  /** Individual transactions within this group — used to build settle form inputs */
+  transactions: DebtTransaction[]
 }
 
 /**
  * Collapse individual debt transactions into household-pair groups.
- * "A owes C ₪50" + "B owes C ₪50" → "A וB חייבים ל-C ₪100" (when A & B share a household).
+ * "A owes C ₪50" + "B owes C ₪50" → "A וB חייבים לC ₪100" (when A & B share a household).
+ * Stores the raw transactions so the settle form can submit them individually.
  */
 function groupDebtsByHousehold(
   transactions: DebtTransaction[],
@@ -134,8 +135,12 @@ function groupDebtsByHousehold(
     memberName[m.id] = m.full_name
   }
 
-  // Group by (from-household-or-id, to-household-or-id)
-  const groups: Record<string, GroupedDebt> = {}
+  const groups: Record<string, {
+    fromIds: Set<string>
+    toIds: Set<string>
+    amount: number
+    transactions: DebtTransaction[]
+  }> = {}
 
   for (const t of transactions) {
     const fromKey = memberHousehold[t.from] ?? t.from
@@ -143,22 +148,21 @@ function groupDebtsByHousehold(
     const key = `${fromKey}|${toKey}`
 
     if (!groups[key]) {
-      groups[key] = { fromIds: [], toIds: [], fromLabel: '', toLabel: '', amount: 0 }
+      groups[key] = { fromIds: new Set(), toIds: new Set(), amount: 0, transactions: [] }
     }
-
     const g = groups[key]
-    if (!g.fromIds.includes(t.from)) g.fromIds.push(t.from)
-    if (!g.toIds.includes(t.to)) g.toIds.push(t.to)
+    g.fromIds.add(t.from)
+    g.toIds.add(t.to)
     g.amount = Math.round((g.amount + t.amount) * 100) / 100
+    g.transactions.push(t)
   }
 
-  // Build display labels
-  for (const g of Object.values(groups)) {
-    g.fromLabel = joinNames(g.fromIds.map((id) => memberName[id] ?? id))
-    g.toLabel = joinNames(g.toIds.map((id) => memberName[id] ?? id))
-  }
-
-  return Object.values(groups)
+  return Object.values(groups).map((g) => ({
+    fromLabel: joinNames([...g.fromIds].map((id) => memberName[id] ?? id)),
+    toLabel: joinNames([...g.toIds].map((id) => memberName[id] ?? id)),
+    amount: g.amount,
+    transactions: g.transactions,
+  }))
 }
 
 function computeSimplifiedDebts(
@@ -321,45 +325,33 @@ export default async function ExpensesPage({
               {groupedDebts.map((g, i) => (
                 <li
                   key={i}
-                  className="flex flex-col gap-3 rounded-2xl border border-[#e4dece] bg-[#fcfaf4] px-5 py-4"
+                  className="flex flex-col gap-3 rounded-2xl border border-[#e4dece] bg-[#fcfaf4] px-5 py-4 md:flex-row md:items-center md:justify-between"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-2 text-sm">
-                      <span className="font-semibold text-[#384332]">{g.fromLabel}</span>
-                      <span className="text-[#6c7664]">
-                        {g.fromIds.length > 1 ? 'חייבים ל' : 'חייב/ת ל'}
-                      </span>
-                      <span className="font-semibold text-[#384332]">{g.toLabel}</span>
-                      <span className="rounded-full bg-[#a67c52]/10 px-4 py-1 text-sm font-bold text-[#a67c52]">
-                        {formatAmount(g.amount)}
-                      </span>
-                    </div>
-
-                    {/* שולם — records one settlement per debtor→creditor pair */}
-                    <div className="flex flex-wrap gap-2">
-                      {g.fromIds.map((fromId) =>
-                        g.toIds.map((toId) => {
-                          const share = Math.round((g.amount / (g.fromIds.length * g.toIds.length)) * 100) / 100
-                          return (
-                            <form key={`${fromId}-${toId}`} action="/api/expenses/settle" method="POST">
-                              <input type="hidden" name="from_member_id" value={fromId} />
-                              <input type="hidden" name="to_member_id" value={toId} />
-                              <input type="hidden" name="amount" value={share} />
-                              <button
-                                type="submit"
-                                className="rounded-xl border border-[#c8d8a8] bg-[#f4f8ee] px-4 py-2 text-xs font-semibold text-[#4a6b3a] transition hover:bg-[#e2ecd4]"
-                              >
-                                ✓ שולם
-                                {g.fromIds.length > 1 || g.toIds.length > 1
-                                  ? ` (${getMemberName(fromId)} → ${getMemberName(toId)})`
-                                  : ''}
-                              </button>
-                            </form>
-                          )
-                        })
-                      )}
-                    </div>
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="font-semibold text-[#384332]">{g.fromLabel}</span>
+                    <span className="text-[#6c7664]">חייבים ל</span>
+                    <span className="font-semibold text-[#384332]">{g.toLabel}</span>
+                    <span className="rounded-full bg-[#a67c52]/10 px-4 py-1 text-sm font-bold text-[#a67c52]">
+                      {formatAmount(g.amount)}
+                    </span>
                   </div>
+
+                  {/* One form per group — submits all individual pair settlements at once */}
+                  <form action="/api/expenses/settle" method="POST" className="shrink-0">
+                    {g.transactions.map((t, ti) => (
+                      <span key={ti}>
+                        <input type="hidden" name="from[]" value={t.from} />
+                        <input type="hidden" name="to[]" value={t.to} />
+                        <input type="hidden" name="amount[]" value={t.amount} />
+                      </span>
+                    ))}
+                    <button
+                      type="submit"
+                      className="rounded-xl border border-[#c8d8a8] bg-[#f4f8ee] px-4 py-2 text-xs font-semibold text-[#4a6b3a] transition hover:bg-[#e2ecd4]"
+                    >
+                      ✓ שולם
+                    </button>
+                  </form>
                 </li>
               ))}
             </ul>
